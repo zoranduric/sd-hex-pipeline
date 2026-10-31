@@ -22,6 +22,12 @@ Everything is built from data you can ship in a **commercial** game (see
 1. Click [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/zoranduric/sd-hex-pipeline/blob/main/notebooks/build_balkans.ipynb)
 2. *Runtime → Run all* (CPU is fine). The preview is shown and a zip of the outputs downloads automatically.
 
+**Private repo:** Colab asks you to authorise GitHub when opening the notebook. For the install step, add a Colab secret
+`GH_TOKEN` holding a fine-grained token with read-only *Contents* access to this repo.
+
+**Hex density:** set `HEX_KM` in the first cell. For the Balkans: 11 km = 28k hexes (≈2× Supreme Ruler),
+9.2 km = 40k (≈3×), 8 km = 54k (≈4×), 5.5 km = 112k (≈8×).
+
 To keep downloads cached between sessions, set `USE_DRIVE = True` in the first cell. Colab will then ask to
 connect to your Google Drive, and outputs are saved to `MyDrive/sd-hex-pipeline/`.
 
