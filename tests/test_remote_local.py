@@ -19,7 +19,7 @@ from rasterio.transform import from_origin
 from shapely.geometry import LineString, box
 
 from sdhex import sources
-from sdhex.config import TERRAIN_ENUM, BuildConfig
+from sdhex.config import BIOME_ENUM, TERRAIN_ENUM, BuildConfig
 from sdhex.pipeline import build
 
 BBOX = (19.6, 44.2, 21.4, 45.4)
@@ -75,6 +75,13 @@ def server(tmp_path_factory):
                          geometry=[box(15, 40, 21, 50), box(21, 40, 30, 50)], crs=4326),
         ne / "ne_10m_admin_1_states_provinces.zip", "ne_10m_admin_1_states_provinces",
     )
+    eco = root / "teow2016"
+    eco.mkdir()
+    _zip_shp(
+        gpd.GeoDataFrame({"ECO_NAME": ["Pannonian", "Balkan"], "BIOME_NUM": [8.0, 4.0]},
+                         geometry=[box(15, 44.6, 30, 50), box(15, 40, 30, 44.6)], crs=4326),
+        eco / "Ecoregions2017.zip", "Ecoregions2017",
+    )
     hydro = root / "hydro"
     hydro.mkdir()
     _zip_shp(
@@ -111,6 +118,7 @@ def patched(server, monkeypatch, tmp_path):
     monkeypatch.setattr(sources, "NE_LAKES", base + "/ne/ne_10m_lakes.zip")
     monkeypatch.setattr(sources, "NE_ADMIN0", base + "/ne/ne_10m_admin_0_countries.zip")
     monkeypatch.setattr(sources, "NE_ADMIN1", base + "/ne/ne_10m_admin_1_states_provinces.zip")
+    monkeypatch.setattr(sources, "ECOREGIONS_URL", base + "/teow2016/Ecoregions2017.zip")
     monkeypatch.setattr(sources, "HYDRORIVERS_URL", base + "/hydro/HydroRIVERS_v10_{region}_shp.zip")
     return sources.RemoteSources(tmp_path / "cache", workers=4)
 
@@ -138,6 +146,21 @@ def test_remote_build(patched):
     assert (res.layers["river_class"].data == 3).sum() >= 8
     assert res.layers["river_class"].data.max() == 3
     assert not (res.layers["river_class"].data == 1).any()
+    biome = res.layers["biome"].data
+    assert set(np.unique(biome[land & (lat > 44.8)])) == {BIOME_ENUM["STEPPE"]}
+    assert set(np.unique(biome[land & (lat < 44.4)])) == {BIOME_ENUM["TEMPERATE_FOREST"]}
+    assert (biome[~land] == 0).all()
+
+
+def test_elevation_skips_tiles_without_land(patched):
+    from sdhex.sampling import SampleGrid
+
+    sg = SampleGrid.covering((19.0, 44.0, 21.0, 45.0), 20)
+    need = np.zeros(sg.shape, dtype=bool)
+    need[:, sg.nx // 2 :] = True  # only lon 20..21 has land
+    elev = patched.elevation(sg, need=need)
+    assert np.isnan(elev[:, : sg.nx // 2]).all()
+    assert np.isfinite(elev[:, sg.nx // 2 :]).all()
 
 
 def test_rivers_merge_multiple_continent_files(patched):
@@ -154,6 +177,10 @@ def test_rivers_merge_multiple_continent_files(patched):
 def test_refuses_unknown_host(tmp_path):
     with pytest.raises(ValueError):
         sources.download("https://example.com/x.zip", tmp_path)
+    with pytest.raises(ValueError, match="unexpected path"):
+        sources.download("https://storage.googleapis.com/other-bucket/x.zip", tmp_path)
+    with pytest.raises(ValueError):
+        sources.download("ftp://naciscdn.org/x.zip", tmp_path)
 
 
 def test_server_error_is_fatal_not_silent(patched, monkeypatch, server):

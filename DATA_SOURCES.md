@@ -8,6 +8,7 @@ The same strings are written to the `attribution` field of every `.sdhx` / `meta
 | [Copernicus DEM GLO-90](https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model) | Elevation stats, mountains/hills | Copernicus DEM licence, free incl. commercial, attribution required | AWS Open Data COGs `copernicus-dem-90m` |
 | [ESA WorldCover 2021 v200](https://esa-worldcover.org/) | Land-cover fractions, dominant class | CC BY 4.0 | AWS Open Data COGs `esa-worldcover` |
 | [Natural Earth 1:10m](https://www.naturalearthdata.com/) | Land, lakes, countries, admin-1 provinces | Public domain | `naciscdn.org` |
+| [RESOLVE Ecoregions 2017](https://ecoregions.appspot.com/) | Biome per hex | CC BY 4.0 | `storage.googleapis.com/teow2016` (one ~150 MB zip) |
 | [HydroRIVERS v1.0](https://www.hydrosheds.org/products/hydrorivers) | Rivers, discharge-based navigability | HydroSHEDS licence: free incl. commercial, citation required | `data.hydrosheds.org` |
 
 ## Required attribution
@@ -17,6 +18,7 @@ Contains modified Copernicus DEM GLO-90 data, provided under COPERNICUS by the E
 ESA WorldCover 2021 v200, (c) ESA WorldCover project / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium. CC BY 4.0.
 HydroRIVERS v1.0: Lehner, B., Grill G. (2013), Hydrological Processes 27(15): 2171-2186. Data available at www.hydrosheds.org.
 Made with Natural Earth. Free vector and raster map data @ naturalearthdata.com.
+Biomes: RESOLVE Ecoregions 2017, Dinerstein et al. (2017), BioScience 67(6): 534-545, doi:10.1093/biosci/bix014. CC BY 4.0.
 ```
 
 ## Notes

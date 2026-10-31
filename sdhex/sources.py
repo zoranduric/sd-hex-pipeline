@@ -60,12 +60,18 @@ def hydrorivers_regions(bounds) -> list[str]:
         if any(lon_min < c and lon_max > a and lat_min < d and lat_max > b for a, b, c, d in boxes)
     ]
 
+# RESOLVE Ecoregions 2017 (CC BY 4.0), ~150 MB, used for biomes.
+ECOREGIONS_URL = "https://storage.googleapis.com/teow2016/Ecoregions2017.zip"
+
 ALLOWED_HOSTS = (
     "copernicus-dem-90m.s3.amazonaws.com",
     "esa-worldcover.s3.eu-central-1.amazonaws.com",
     "naciscdn.org",
     "data.hydrosheds.org",
+    "storage.googleapis.com",
 )
+# Shared hosts are only trusted for specific path prefixes.
+HOST_PATH_PREFIX = {"storage.googleapis.com": "/teow2016/"}
 
 GDAL_ENV = {
     "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
@@ -82,9 +88,12 @@ _MISSING_MARKERS = ("404", "does not exist", "No such file")
 class Sources(Protocol):
     """What the pipeline needs. Rasters come back already on the sample grid."""
 
-    def elevation(self, sg: SampleGrid) -> np.ndarray: ...  # float32 metres, NaN = no data
+    # ``need`` (optional bool raster on ``sg``) lets sources skip tiles with no land.
+    def elevation(self, sg: SampleGrid, need: np.ndarray | None = None) -> np.ndarray: ...  # float32 m, NaN = none
 
-    def landcover(self, sg: SampleGrid) -> np.ndarray: ...  # uint8 WorldCover class, 0 = no data
+    def landcover(self, sg: SampleGrid, need: np.ndarray | None = None) -> np.ndarray: ...  # uint8, 0 = none
+
+    def biomes(self, bounds) -> gpd.GeoDataFrame: ...  # columns: biome_num (WWF 1-14), geometry
 
     def land(self, bounds) -> gpd.GeoDataFrame: ...
 
@@ -163,9 +172,25 @@ def _mosaic(tiles, sg: SampleGrid, dtype, fill, resampling, workers: int) -> np.
 
 
 def _check_host(url: str) -> None:
-    host = url.split("/")[2]
-    if host not in ALLOWED_HOSTS:
+    parts = url.split("/")
+    host = parts[2] if len(parts) > 2 else ""
+    if not url.startswith(("https://", "http://")) or host not in ALLOWED_HOSTS:
         raise ValueError(f"refusing to download from unexpected host {host}")
+    prefix = HOST_PATH_PREFIX.get(host)
+    if prefix and not ("/" + "/".join(parts[3:])).startswith(prefix):
+        raise ValueError(f"refusing to download unexpected path on {host}")
+
+
+def _tiles_with_land(tiles, sg: SampleGrid, need: np.ndarray | None):
+    if need is None:
+        return tiles
+    keep = []
+    for url, tb in tiles:
+        win = sg.window_for(tb)
+        if win is not None and need[win[0] : win[0] + win[2], win[1] : win[1] + win[3]].any():
+            keep.append((url, tb))
+    log.debug("%d/%d tiles touch land", len(keep), len(tiles))
+    return keep
 
 
 def download(url: str, cache_dir: Path) -> Path:
@@ -206,19 +231,22 @@ def _col(gdf: gpd.GeoDataFrame, *names: str) -> str:
 class RemoteSources:
     """Streams COG rasters over HTTP range requests; caches vector downloads."""
 
+    # Part of the band-cache key; bump when source datasets or their handling change.
+    cache_tag = "remote-v1"
+
     def __init__(self, cache_dir: str | Path = "cache", workers: int = 8, river_regions: list[str] | None = None):
         self.cache = Path(cache_dir)
         self.workers = workers
         self.river_regions = river_regions
 
-    def elevation(self, sg: SampleGrid) -> np.ndarray:
-        tiles = copdem_tiles(sg.bounds)
+    def elevation(self, sg: SampleGrid, need: np.ndarray | None = None) -> np.ndarray:
+        tiles = _tiles_with_land(copdem_tiles(sg.bounds), sg, need)
         for url, _ in tiles:
             _check_host(url)
         return _mosaic(tiles, sg, np.float32, np.nan, Resampling.average, self.workers)
 
-    def landcover(self, sg: SampleGrid) -> np.ndarray:
-        tiles = worldcover_tiles(sg.bounds)
+    def landcover(self, sg: SampleGrid, need: np.ndarray | None = None) -> np.ndarray:
+        tiles = _tiles_with_land(worldcover_tiles(sg.bounds), sg, need)
         for url, _ in tiles:
             _check_host(url)
         return _mosaic(tiles, sg, np.uint8, 0, Resampling.mode, self.workers)
@@ -245,6 +273,12 @@ class RemoteSources:
             },
             geometry=g.geometry,
             crs=g.crs,
+        )
+
+    def biomes(self, bounds) -> gpd.GeoDataFrame:
+        g = _read_zipped_vector(download(ECOREGIONS_URL, self.cache), bounds)
+        return gpd.GeoDataFrame(
+            {"biome_num": g[_col(g, "BIOME_NUM")].fillna(0).astype(int)}, geometry=g.geometry, crs=g.crs
         )
 
     def rivers(self, bounds) -> gpd.GeoDataFrame:

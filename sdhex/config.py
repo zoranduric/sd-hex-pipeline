@@ -17,6 +17,8 @@ REGIONS: dict[str, tuple[float, float, float, float]] = {
     "india": (60.5, 5.5, 98.0, 37.5),
     # Egypt/Turkey -> Iran, Caucasus -> Yemen.
     "middle_east": (25.0, 12.0, 63.5, 42.5),
+    # Whole grid (84N..60S, no Antarctica). Built in latitude bands; rivers not yet supported.
+    "world": (-180.0, -60.0, 180.0, 84.0),
 }
 
 # Game terrain enum. Values match TerrainData in the Godot project.
@@ -31,6 +33,62 @@ TERRAIN_ENUM: dict[str, int] = {
     "IMPASSABLE": 7,
 }
 
+# Climate / vegetation zone, orthogonal to terrain (landform). A hex is e.g.
+# HILLS + TROPICAL_RAINFOREST. Derived from RESOLVE Ecoregions 2017 biomes,
+# with ICE from ESA WorldCover permanent snow/ice.
+BIOME_ENUM: dict[str, int] = {
+    "NONE": 0,
+    "TROPICAL_RAINFOREST": 1,
+    "TROPICAL_DRY_FOREST": 2,
+    "TEMPERATE_FOREST": 3,
+    "BOREAL_FOREST": 4,
+    "SAVANNA": 5,
+    "STEPPE": 6,
+    "WETLAND": 7,
+    "ALPINE": 8,
+    "TUNDRA": 9,
+    "MEDITERRANEAN": 10,
+    "DESERT": 11,
+    "MANGROVE": 12,
+    "ICE": 13,
+}
+
+# RESOLVE/WWF BIOME_NUM -> BIOME_ENUM. Anything else (e.g. "Rock and Ice", N/A) -> 0,
+# later filled from neighbours or overridden by ICE.
+WWF_BIOME_TO_GAME: dict[int, int] = {
+    1: 1,   # Tropical & Subtropical Moist Broadleaf Forests
+    2: 2,   # Tropical & Subtropical Dry Broadleaf Forests
+    3: 2,   # Tropical & Subtropical Coniferous Forests
+    4: 3,   # Temperate Broadleaf & Mixed Forests
+    5: 3,   # Temperate Conifer Forests
+    6: 4,   # Boreal Forests/Taiga
+    7: 5,   # Tropical & Subtropical Grasslands, Savannas & Shrublands
+    8: 6,   # Temperate Grasslands, Savannas & Shrublands
+    9: 7,   # Flooded Grasslands & Savannas
+    10: 8,  # Montane Grasslands & Shrublands
+    11: 9,  # Tundra
+    12: 10, # Mediterranean Forests, Woodlands & Scrub
+    13: 11, # Deserts & Xeric Shrublands
+    14: 12, # Mangroves
+}
+
+BIOME_COLORS: dict[int, tuple[int, int, int]] = {
+    0: (38, 70, 120),
+    1: (20, 110, 40),
+    2: (120, 150, 60),
+    3: (60, 130, 70),
+    4: (40, 90, 80),
+    5: (190, 180, 90),
+    6: (170, 175, 110),
+    7: (80, 140, 140),
+    8: (150, 140, 120),
+    9: (160, 170, 160),
+    10: (170, 150, 80),
+    11: (225, 205, 150),
+    12: (30, 120, 100),
+    13: (240, 245, 250),
+}
+
 TERRAIN_COLORS: dict[int, tuple[int, int, int]] = {
     0: (38, 70, 120),
     1: (128, 168, 88),
@@ -39,7 +97,7 @@ TERRAIN_COLORS: dict[int, tuple[int, int, int]] = {
     4: (128, 112, 96),
     5: (232, 232, 236),
     6: (70, 130, 190),
-    7: (40, 40, 40),
+    7: (200, 215, 235),  # IMPASSABLE (mostly ice sheets)
 }
 
 # ESA WorldCover v200 class codes.
@@ -77,6 +135,9 @@ class ClassifyParams:
     hills_mean_m: float = 500.0
     hills_std_m: float = 80.0
     desert_bare_frac: float = 0.5
+    # Permanent snow/ice share (WorldCover class 70) that makes a hex IMPASSABLE
+    # terrain and ICE biome (Greenland, Svalbard, big glaciers).
+    ice_frac: float = 0.5
     # Mean discharge (m^3/s, HydroRIVERS DIS_AV_CMS) per river class 1..3.
     river_class_min_cms: tuple[float, float, float] = (50.0, 200.0, 500.0)
     # Hexes carrying a river of at least this class become RIVER terrain
@@ -97,6 +158,7 @@ class BuildConfig:
     with_landcover: bool = True
     with_rivers: bool = True
     with_admin1: bool = True
+    with_biomes: bool = True
     classify: ClassifyParams = field(default_factory=ClassifyParams)
 
     def resolved_bbox(self) -> tuple[float, float, float, float]:

@@ -26,6 +26,8 @@ Only `u8` and `i32` dtypes are used.
 | `grid` | Global lattice: `hex_km`, `global_width`, `global_height`, `lat_top`, `lat_bottom`, `lon0`, `dx_deg`, `dy_deg`, `layout`, `neighbor_dirs_axial` (columns always wrap east–west) |
 | `crop` | `col0`, `row0` (even), `width`, `height`, `cells` of this file inside the global grid |
 | `terrain_enum` | `{name: value}` for the `terrain` layer |
+| `biome_enum` | `{name: value}` for the `biome` layer |
+| `wwf_biome_to_biome` | Ecoregions `BIOME_NUM` → `biome` value used for the build |
 | `landcover_classes` | WorldCover class code → name |
 | `countries` | `[{id, code, name}]`; `country` layer indexes this (`-1` = none) |
 | `admin1` | `[{id, code, name, country}]`; `admin1` layer indexes this (`-1` = none) |
@@ -43,12 +45,16 @@ Hex centre of global `(col, row)`:
 | `terrain` | u8 | Game terrain enum |
 | `flags` | u8 | 1 land, 2 lake, 4 coastal, 8 river, 16 navigable river |
 | `landcover` | u8 | Dominant WorldCover class on dry land (0 none) |
+| `biome` | u8 | Climate zone (`biome_enum`), 0 on water. Absent if built with `--no-biomes` |
 | `land_pct`, `lake_pct` | u8 | Share of the hex, 0–100 |
-| `forest_pct`, `crop_pct`, `urban_pct`, `wetland_pct`, `bare_pct` | u8 | Share of dry land, 0–100 |
+| `forest_pct`, `crop_pct`, `urban_pct`, `wetland_pct`, `bare_pct`, `snow_pct` | u8 | Share of dry land, 0–100 (`bare_pct` excludes snow/ice) |
 | `river_mask` | u8 | Bit *d* set = river continues to neighbour in direction *d* (E, NE, NW, W, SW, SE) |
 | `river_class` | u8 | 0 none, 1 minor (≥ 50 m³/s), 2 major (≥ 200), 3 navigable (≥ 500) |
 | `elev_mean`, `elev_min`, `elev_max`, `elev_std` | i32 | Metres, over dry land |
 | `country`, `admin1` | i32 | Index into header tables, −1 none |
+
+For whole-world files `crop.width == grid.global_width` and the map wraps east–west: the east
+neighbour of column `width − 1` is column 0 (same row).
 
 Readers must ignore unknown layers and header keys. New layers may be added without a version bump.
 The reference readers are `sdhex.export.read_sdhx` (Python) and `godot/hex_map_data.gd` (GDScript),

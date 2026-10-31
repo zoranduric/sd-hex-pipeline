@@ -51,6 +51,7 @@ Outputs go to `out/<region>_<hexkm>km/`:
 | `hexmap.meta.json` | Header + stats + layer docs, human readable |
 | `hex_terrain.png` | One texel per hex: RGB terrain colour, A flags |
 | `preview.png` | Hex render with borders and rivers, for eyeballing |
+| `preview_biomes.png` | Same, coloured by biome |
 
 ## Regions
 
@@ -63,6 +64,7 @@ Outputs go to `out/<region>_<hexkm>km/`:
 | `baltics` | 6k | 9k | eu |
 | `india` | 142k | 203k | eu, as, au |
 | `middle_east` | 140k | 199k | eu, af, as |
+| `world` | 6.1M | 8.7M | none (rivers not supported yet) |
 
 - HydroRIVERS continent files are chosen automatically from the bbox. Override with `--river-regions eu,as`.
   Each file is a large one-off download (cached).
@@ -102,6 +104,26 @@ if map.flags[i] & HexMapData.FLAG_NAVIGABLE: ...
 - **Exporting the game:** add `*.sdhx` to *Export → Resources → Filters to export non-resource files*,
   or the file will be missing in exported builds.
 - In the map shader, convert axial to odd-r before `texelFetch` (see the doc comment on `make_data_image`).
+### Whole world
+
+```bash
+sdhex build --region world --hex-km 11 --workers 32 --cache /content/drive/MyDrive/sd-hex-pipeline/cache
+```
+
+- Lat 84°N to 60°S, full 360° with east–west wrap. Antarctica is left out. 11 km gives ~6.1M hexes and
+  an `.sdhx` of ~230 MB. Rivers are switched off automatically for now.
+- The world is processed in **latitude bands** (≤ 24M sample pixels each, ~6° of latitude at 11 km), so
+  RAM stays at a few GB. Each finished band is saved to `<cache>/bands/`. If Colab disconnects, run again
+  with the same settings and it resumes from the last finished band. **Use `USE_DRIVE = True`** so the
+  cache survives the runtime.
+- Banded output is identical to a single-pass build (tested).
+- DEM and WorldCover tiles with no land are skipped. Expect tens of GB of streamed reads and several
+  hours on the first run. Test with `--hex-km 50` first (a few minutes).
+- **GPU does not help.** The pipeline is limited by network reads and CPU (polygon rasterising and
+  per-hex statistics), not by maths a GPU could speed up. Choose a **High-RAM CPU** runtime and more
+  `--workers` (parallel downloads). A GPU runtime just uses compute units faster. GPUs become useful later
+  for satellite texture work (upscaling, de-lighting, normal maps).
+
 - Rivers are stored per hex (`river_class`), and `river_mask` gives the directions the river connects.
   This supports both "river hex" movement costs and drawing river lines between hex centres.
 
@@ -115,19 +137,47 @@ written to the header. The first matching rule wins:
 3. Mean ≥ 1200 m or std-dev ≥ 250 m → `MOUNTAIN`
 4. Non-mountain hex with a navigable river (≥ 500 m³/s mean discharge) → `RIVER`
 5. Mean ≥ 500 m or std-dev ≥ 80 m → `HILLS`
-6. Bare/snow ≥ 50 % → `DESERT`
+6. Bare/sparse (WorldCover 60) ≥ 50 % → `DESERT`
 7. Otherwise → `GRASSLAND`
+
+Snow/ice (WorldCover 70) ≥ 50 % of the hex overrides rules 2–7 with `IMPASSABLE`.
 
 Forest, cropland, urban and wetland are **fraction layers** (`forest_pct`, `urban_pct`, …) plus the
 dominant `landcover` class, not terrain types. Together with the elevation statistics, the game can
 derive modifiers or reclassify without re-running the pipeline.
+
+### Biomes
+
+`terrain` is the **landform** (how hard to move and fight). `biome` is a separate **climate zone** layer
+from RESOLVE Ecoregions 2017. It drives attrition, supply, seasons and visuals. Keeping them separate
+avoids an explosion of combined types like "forested tropical hills":
+
+| `biome` | Source (WWF biome) | Typical game use |
+|---|---|---|
+| 1 `TROPICAL_RAINFOREST` | 1 | Jungle: with high `forest_pct`, heavy attrition and slow movement |
+| 2 `TROPICAL_DRY_FOREST` | 2, 3 | |
+| 3 `TEMPERATE_FOREST` | 4, 5 | |
+| 4 `BOREAL_FOREST` | 6 | Taiga, winter attrition |
+| 5 `SAVANNA` | 7 | |
+| 6 `STEPPE` | 8 | Temperate grassland |
+| 7 `WETLAND` | 9 | Flooded grassland |
+| 8 `ALPINE` | 10 | Montane grassland/shrub |
+| 9 `TUNDRA` | 11 | |
+| 10 `MEDITERRANEAN` | 12 | |
+| 11 `DESERT` | 13 | Desert & xeric shrub: water supply, heat attrition |
+| 12 `MANGROVE` | 14 | |
+| 13 `ICE` | snow ≥ 50 % | Glaciers/ice caps (also `IMPASSABLE` terrain) |
+
+`DESERT` terrain (bare ground) and `DESERT` biome are different on purpose. For example, a rocky desert
+mountain is `MOUNTAIN` terrain in the `DESERT` biome. Water hexes have biome 0. Land hexes falling between
+ecoregion polygons take the most common biome of their neighbours. Disable with `--no-biomes`.
 
 ## Limitations / not verified yet
 
 - Real downloads have not been run end to end yet. The pipeline was developed in a sandbox without
   access to the data hosts, and is tested against a local HTTP range server plus a synthetic world.
   Expect to tweak things on the first Colab run, then please open an issue with the log (`-v`).
-- Areas crossing the antimeridian (±180°) are rejected for now.
+- Custom areas crossing the antimeridian (±180°) are rejected for now. Only the full-width world wraps.
 - HydroRIVERS continent boxes in `sources.py` are approximate (generous). A bbox near a boundary may
   download one extra file.
 
@@ -136,7 +186,7 @@ derive modifiers or reclassify without re-running the pipeline.
 - Satellite base texture from commercial-safe imagery (e.g. NASA Blue Marble / Sentinel-2 cloudless
   composites with suitable licences), aligned to the same equirectangular extent.
 - GHSL population per hex, for production and manpower.
-- World builds processed in latitude bands, so a full world fits in Colab RAM.
+- Rivers for whole-world builds (stream HydroRIVERS per band).
 - Hex-edge rivers (rivers on edges instead of through hexes) as an option.
 - Admin-1 → game regions/states clustering (where `opengs-maptool`-style Voronoi grouping fits).
 

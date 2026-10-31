@@ -42,6 +42,8 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--no-landcover", action="store_true")
     b.add_argument("--no-rivers", action="store_true")
     b.add_argument("--no-admin1", action="store_true")
+    b.add_argument("--no-biomes", action="store_true", help="skip the ecoregion biome layer")
+    b.add_argument("--band-rows", type=int, help=argparse.SUPPRESS)
     b.add_argument("--synthetic", action="store_true", help="use a generated offline world (no downloads)")
     b.add_argument("-v", "--verbose", action="store_true")
 
@@ -59,14 +61,23 @@ def main(argv: list[str] | None = None) -> int:
     if not 2 <= args.samples_per_hex <= 40:
         ap.error("--samples-per-hex must be between 2 and 40")
 
+    bbox = args.bbox or REGIONS[args.region]
+    with_rivers = not args.no_rivers
+    if with_rivers and bbox[0] <= -180 and bbox[2] >= 180:
+        logging.info("whole-world build: rivers are not supported yet, building without them")
+        with_rivers = False
+    if args.band_rows is not None and (args.band_rows < 2 or args.band_rows % 2):
+        ap.error("--band-rows must be an even number >= 2")
+
     cfg = BuildConfig(
         region=args.region,
         bbox=args.bbox,
         hex_km=args.hex_km,
         samples_per_hex=args.samples_per_hex,
         with_landcover=not args.no_landcover,
-        with_rivers=not args.no_rivers,
+        with_rivers=with_rivers,
         with_admin1=not args.no_admin1,
+        with_biomes=not args.no_biomes,
     )
     name = "synthetic" if args.synthetic else (args.region if args.bbox is None else "custom")
     out_dir = args.out / f"{name}_{args.hex_km:g}km"
@@ -78,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
             args.cache, args.workers,
             river_regions=args.river_regions.split(",") if args.river_regions else None,
         )
-    res = build(cfg, sources)
+    res = build(cfg, sources, band_rows=args.band_rows, band_cache=args.cache / "bands")
     paths = export(res, cfg, out_dir)
     meta = json.loads(paths["meta"].read_text())
     logging.info("done in %.0fs: %s", time.time() - t0, json.dumps(meta["stats"]))

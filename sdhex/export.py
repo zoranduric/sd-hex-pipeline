@@ -19,7 +19,15 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from .config import TERRAIN_COLORS, TERRAIN_ENUM, WORLDCOVER_CLASSES, BuildConfig
+from .config import (
+    BIOME_COLORS,
+    BIOME_ENUM,
+    TERRAIN_COLORS,
+    TERRAIN_ENUM,
+    WORLDCOVER_CLASSES,
+    WWF_BIOME_TO_GAME,
+    BuildConfig,
+)
 from .hexgrid import NEIGHBOR_DIRS
 from .pipeline import BuildResult
 
@@ -34,6 +42,8 @@ ATTRIBUTION = [
     "HydroRIVERS v1.0: Lehner, B., Grill G. (2013), Hydrological Processes 27(15): 2171-2186. "
     "Data available at www.hydrosheds.org.",
     "Made with Natural Earth. Free vector and raster map data @ naturalearthdata.com.",
+    "Biomes: RESOLVE Ecoregions 2017, Dinerstein et al. (2017), BioScience 67(6): 534-545, "
+    "doi:10.1093/biosci/bix014. CC BY 4.0.",
 ]
 
 
@@ -68,6 +78,8 @@ def header_dict(res: BuildResult, cfg: BuildConfig) -> dict:
             "cells": res.crop.cells,
         },
         "terrain_enum": TERRAIN_ENUM,
+        "biome_enum": BIOME_ENUM,
+        "wwf_biome_to_biome": {str(k): v for k, v in WWF_BIOME_TO_GAME.items()},
         "landcover_classes": {str(k): v for k, v in WORLDCOVER_CLASSES.items()},
         "countries": res.tables.get("countries", []),
         "admin1": res.tables.get("admin1", []),
@@ -123,11 +135,29 @@ def read_sdhx(path: Path) -> tuple[dict, dict[str, np.ndarray]]:
     return header, layers
 
 
-def _terrain_rgb(terrain: np.ndarray) -> np.ndarray:
+def _lut_rgb(values: np.ndarray, colors: dict[int, tuple[int, int, int]]) -> np.ndarray:
     lut = np.zeros((256, 3), dtype=np.uint8)
-    for k, c in TERRAIN_COLORS.items():
+    for k, c in colors.items():
         lut[k] = c
-    return lut[terrain]
+    return lut[values]
+
+
+def _terrain_rgb(terrain: np.ndarray) -> np.ndarray:
+    return _lut_rgb(terrain, TERRAIN_COLORS)
+
+
+def _preview_index(res: BuildResult, max_px: int) -> np.ndarray:
+    """Hex index per pixel of an equirectangular raster at most ``max_px`` wide/high."""
+    lon_min, lat_min, lon_max, lat_max = res.crop.lonlat_bounds(0.5)
+    aspect = (lat_max - lat_min) / (lon_max - lon_min)
+    w = max_px if aspect <= 1 else int(max_px / aspect)
+    h = max(1, int(round(w * aspect)))
+    lon = lon_min + (np.arange(w) + 0.5) * (lon_max - lon_min) / w
+    out = np.empty((h, w), dtype=np.int32)
+    for row in range(h):
+        lat = np.full(w, lat_max - (row + 0.5) * (lat_max - lat_min) / h)
+        out[row] = res.crop.lonlat_to_index(lon, lat)
+    return out
 
 
 def write_hex_texture(path: Path, res: BuildResult) -> None:
@@ -138,20 +168,23 @@ def write_hex_texture(path: Path, res: BuildResult) -> None:
     Image.fromarray(np.concatenate([rgb, a], axis=2), "RGBA").save(path)
 
 
-def write_preview(path: Path, res: BuildResult, max_px: int = 4096) -> None:
+def write_preview(path: Path, res: BuildResult, max_px: int = 4096, colors=None, layer="terrain") -> None:
     """Hex-shaped render with country borders, rivers and faint hex outlines."""
-    idx = res.hex_idx
+    idx = res.hex_idx if res.hex_idx is not None else _preview_index(res, max_px)
     inside = idx >= 0
     safe = np.clip(idx, 0, None)
     terrain = res.layers["terrain"].data
     country = res.layers["country"].data
-    img = _terrain_rgb(terrain[safe]).astype(np.float32)
+    img = _lut_rgb(res.layers[layer].data[safe], colors or TERRAIN_COLORS).astype(np.float32)
     img[~inside] = (20, 20, 24)
 
-    hex_edge = np.zeros(idx.shape, dtype=bool)
-    hex_edge[:, :-1] |= idx[:, :-1] != idx[:, 1:]
-    hex_edge[:-1, :] |= idx[:-1, :] != idx[1:, :]
-    img[hex_edge & inside] *= 0.82
+    # Hex outlines only when hexes are big enough on screen to read.
+    hex_px = idx.shape[1] / max(1, res.crop.width)
+    if hex_px >= 4:
+        hex_edge = np.zeros(idx.shape, dtype=bool)
+        hex_edge[:, :-1] |= idx[:, :-1] != idx[:, 1:]
+        hex_edge[:-1, :] |= idx[:-1, :] != idx[1:, :]
+        img[hex_edge & inside] *= 0.82
 
     cty = np.where(inside, country[safe], -2)
     border = np.zeros(idx.shape, dtype=bool)
@@ -180,6 +213,7 @@ def export(res: BuildResult, cfg: BuildConfig, out_dir: Path) -> dict[str, Path]
         "meta": out_dir / "hexmap.meta.json",
         "texture": out_dir / "hex_terrain.png",
         "preview": out_dir / "preview.png",
+        "biomes": out_dir / "preview_biomes.png",
     }
     write_sdhx(paths["sdhx"], header, res.layers)
     _, layers = read_sdhx(paths["sdhx"])
@@ -190,6 +224,7 @@ def export(res: BuildResult, cfg: BuildConfig, out_dir: Path) -> dict[str, Path]
         "land_hexes": int(((layers["flags"] & 1) > 0).sum()),
         "river_hexes": int((layers["river_class"] > 0).sum()),
         "navigable_hexes": int(((layers["flags"] & 16) > 0).sum()),
+        "biome_counts": {name: int((layers["biome"] == v).sum()) for name, v in BIOME_ENUM.items()},
     }
     meta = {**header, "stats": stats, "layers": [
         {"name": k, "dtype": v.dtype, "description": v.description} for k, v in res.layers.items()
@@ -197,4 +232,5 @@ def export(res: BuildResult, cfg: BuildConfig, out_dir: Path) -> dict[str, Path]
     paths["meta"].write_text(json.dumps(meta, indent=2), encoding="utf-8")
     write_hex_texture(paths["texture"], res)
     write_preview(paths["preview"], res)
+    write_preview(paths["biomes"], res, colors=BIOME_COLORS, layer="biome")
     return paths

@@ -13,6 +13,8 @@ class SyntheticSources:
     """West third is sea, a lake in the middle, mountains in the south-east,
     two countries split north/south of a big east-west river."""
 
+    cache_tag = "synthetic-v1"
+
     def __init__(self, bbox):
         self.bbox = bbox
         lon_min, lat_min, lon_max, lat_max = bbox
@@ -30,7 +32,7 @@ class SyntheticSources:
         lat = sg.lat_max - (np.arange(sg.ny) + 0.5) * sg.res
         return np.meshgrid(lon, lat)
 
-    def elevation(self, sg: SampleGrid) -> np.ndarray:
+    def elevation(self, sg: SampleGrid, need=None) -> np.ndarray:
         lon, lat = self._lonlat(sg)
         fx = (lon - self.bbox[0]) / self.w
         fy = (lat - self.bbox[1]) / self.h
@@ -39,13 +41,28 @@ class SyntheticSources:
         ridges = 150 * np.sin(lon * 40) * (fx > 0.6)
         return (base + peak + ridges).astype(np.float32)
 
-    def landcover(self, sg: SampleGrid) -> np.ndarray:
+    def landcover(self, sg: SampleGrid, need=None) -> np.ndarray:
         lon, lat = self._lonlat(sg)
         fy = (lat - self.bbox[1]) / self.h
         fx = (lon - self.bbox[0]) / self.w
         lc = np.where(fy > 0.6, 10, 40).astype(np.uint8)
         lc[(np.abs(fx - 0.6) < 0.04) & (np.abs(fy - 0.45) < 0.04)] = 50
+        # A glacier in the far north-east corner.
+        lc[(fx > 0.9) & (fy > 0.9)] = 70
         return lc
+
+    def biomes(self, bounds):
+        # North: boreal; south: Mediterranean; a rainforest block; a gap (no polygon)
+        # in the middle band to exercise neighbour filling.
+        return gpd.GeoDataFrame(
+            {"biome_num": [6, 12, 1]},
+            geometry=[
+                box(self._x(-0.5), self._y(0.55), self._x(1.5), self._y(1.5)),
+                box(self._x(-0.5), self._y(-0.5), self._x(1.5), self._y(0.45)),
+                box(self._x(0.7), self._y(0.05), self._x(0.8), self._y(0.3)),
+            ],
+            crs=4326,
+        )
 
     def land(self, bounds):
         return gpd.GeoDataFrame(geometry=[box(self._x(0.33), self._y(-0.5), self._x(1.5), self._y(1.5))], crs=4326)

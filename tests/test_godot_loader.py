@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from sdhex.config import BuildConfig
+from sdhex.config import REGIONS, BuildConfig
 from sdhex.export import export, read_sdhx
 from sdhex.pipeline import build, neighbor_table
 from sdhex.synthetic import SyntheticSources
@@ -22,9 +22,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.mark.skipif(not GODOT, reason="set GODOT_BIN to run the Godot loader check")
-def test_godot_loader_matches_python(tmp_path):
-    bbox = (19.5, 44.0, 21.5, 45.5)
-    cfg = BuildConfig(bbox=bbox, hex_km=11.0)
+@pytest.mark.parametrize(
+    "bbox,hex_km,rivers",
+    [((19.5, 44.0, 21.5, 45.5), 11.0, True), (REGIONS["world"], 300.0, False)],
+    ids=["region", "world-wrap"],
+)
+def test_godot_loader_matches_python(tmp_path, bbox, hex_km, rivers):
+    cfg = BuildConfig(bbox=bbox, hex_km=hex_km, samples_per_hex=6, with_rivers=rivers)
     res = build(cfg, SyntheticSources(bbox))
     paths = export(res, cfg, tmp_path / "out")
     _, layers = read_sdhx(paths["sdhx"])

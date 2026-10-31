@@ -44,6 +44,13 @@ func _init() -> void:
 	var img := data.make_data_image()
 	if img.get_width() != data.width or img.get_height() != data.height:
 		failures.append("image size")
+	var bimg := data.make_layer_image("biome")
+	if data.biome.size() != data.cells or bimg.get_width() != data.width or bimg.get_height() != data.height:
+		failures.append("biome layer/image")
+	elif bimg.get_pixel(1, 0).r8 != data.biome[1]:
+		failures.append("biome texel")
+	if not data.make_layer_image("nope").is_empty():
+		failures.append("missing layer image")
 	var bad := HexMapData.new()
 	if bad._parse(PackedByteArray([1, 2, 3])) == "":
 		failures.append("garbage accepted")

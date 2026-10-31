@@ -85,8 +85,21 @@ The pipeline uses these conventions. The game must match them rather than the ot
   continuous modifiers rather than extra terrain types.
 - Rivers: `river_class` (0–3) for crossing penalties. `river_connects(i, d)` / `FLAG_NAVIGABLE`
   for naval/barge movement along rivers.
+- Biomes: the `biome` layer (`header.biome_enum`) is a climate zone, separate from `terrain`. Use it for
+  attrition, supply, seasonal effects and visuals. Jungle = `TROPICAL_RAINFOREST` plus high `forest_pct`.
+  Do not merge it into the terrain enum.
 - Area: hexes shrink east–west with latitude (`cos(lat)`). Where it matters (production, population,
   supply capacity), scale by `cos(center_lonlat(i).y)`.
+
+### World-scale files (`--region world`, ~6M hexes at 11 km)
+- `crop.width == grid.global_width`: the map wraps east–west. `neighbor()` already handles this. Render
+  by repeating the map quad / sampling with `posmod(col, width)`.
+- Do **not** loop over all hexes in GDScript at load time (`build_neighbors_flat()`, `make_data_image()`
+  take seconds to minutes at this size). Use `make_layer_image(name)` (R8, no loop) per layer for the
+  shader, and compute neighbours on demand with `neighbor(i, d)`. Do simulation sweeps in C#/GDExtension
+  or over admin1 aggregates.
+- Store ownership and other changing state in separate `PackedByteArray`/`PackedInt32Array` buffers, and
+  upload only changed rows to the GPU texture (`Image.set_pixel` on dirty regions, or `ImageTexture.update`).
 
 ### Phase 5 (later): satellite underlay
 - Hex world space is linear in lon/lat: `px_per_degree = sqrt(3) * S / header.grid.dx_deg`, the same on both

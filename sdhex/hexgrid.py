@@ -141,12 +141,17 @@ class HexCrop:
             raise ValueError("bbox must be (lon_min, lat_min, lon_max, lat_max) with min < max")
         if lon_min < -180 or lon_max > 180:
             raise ValueError("bbox crossing the antimeridian is not supported yet")
+        full_width = lon_min <= -180 and lon_max >= 180
         row_a = max(0, int(math.ceil((grid.lat_top - lat_max) / grid.dy)))
         row_b = min(grid.global_height - 1, int(math.floor((grid.lat_top - lat_min) / grid.dy)))
         # Keep the crop's first row even so local odd-r parity equals global parity.
         row_a -= row_a & 1
-        col_a = int(math.ceil((lon_min - grid.lon0) / grid.dx))
-        col_b = int(math.floor((lon_max - grid.lon0) / grid.dx))
+        if full_width:
+            # Whole circumference: columns wrap, neighbours across +-180 connect.
+            col_a, col_b = 0, grid.global_width - 1
+        else:
+            col_a = int(math.ceil((lon_min - grid.lon0) / grid.dx))
+            col_b = int(math.floor((lon_max - grid.lon0) / grid.dx))
         if row_b < row_a or col_b < col_a:
             raise ValueError("bbox is smaller than one hex")
         return cls(grid, col_a, row_a, col_b - col_a + 1, row_b - row_a + 1)
@@ -168,15 +173,26 @@ class HexCrop:
         rows, cols = np.divmod(np.arange(self.cells), self.width)
         return self.grid.center_lonlat(cols + self.col0, rows + self.row0)
 
+    @property
+    def full_width(self) -> bool:
+        return self.width == self.grid.global_width
+
+    def row_band(self, r0: int, n: int) -> "HexCrop":
+        """Sub-crop of local rows [r0, r0 + n); r0 must be even to keep odd-r parity."""
+        if r0 % 2:
+            raise ValueError("band must start on an even row")
+        return HexCrop(self.grid, self.col0, self.row0 + r0, self.width, min(n, self.height - r0))
+
     def lonlat_bounds(self, margin_hexes: float = 1.0) -> tuple[float, float, float, float]:
-        lon, lat = self.centers()
         m = margin_hexes * self.grid.dx
-        return (
-            float(lon.min()) - m,
-            float(lat.min()) - m,
-            float(lon.max()) + m,
-            float(lat.max()) + m,
-        )
+        lat_hi = self.grid.lat_top - self.row0 * self.grid.dy
+        lat_lo = self.grid.lat_top - (self.row0 + self.height - 1) * self.grid.dy
+        lat = (max(-90.0, lat_lo - m), min(90.0, lat_hi + m))
+        if self.full_width:
+            return (-180.0, lat[0], 180.0, lat[1])
+        lon_lo = self.grid.lon0 + self.col0 * self.grid.dx
+        lon_hi = self.grid.lon0 + (self.col0 + self.width - 1 + 0.5) * self.grid.dx
+        return (max(-180.0, lon_lo - m), lat[0], min(180.0, lon_hi + m), lat[1])
 
     def neighbor(self, idx: int, d: int) -> int:
         """Local neighbour index in direction ``d`` (``-1`` outside the crop)."""

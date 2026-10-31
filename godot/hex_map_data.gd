@@ -36,6 +36,8 @@ var hex_km: float = 0.0
 var terrain := PackedByteArray()
 var flags := PackedByteArray()
 var landcover := PackedByteArray()
+## Climate zone per hex (header["biome_enum"]); empty in files built with --no-biomes.
+var biome := PackedByteArray()
 var river_mask := PackedByteArray()
 var river_class := PackedByteArray()
 var elev_mean := PackedInt32Array()
@@ -113,6 +115,7 @@ func _parse(bytes: PackedByteArray) -> String:
 	river_mask = _u8["river_mask"]
 	river_class = _u8["river_class"]
 	landcover = _u8.get("landcover", PackedByteArray())
+	biome = _u8.get("biome", PackedByteArray())
 	elev_mean = _i32.get("elev_mean", PackedInt32Array())
 	country = _i32.get("country", PackedInt32Array())
 	admin1 = _i32.get("admin1", PackedInt32Array())
@@ -174,6 +177,7 @@ func neighbor(i: int, d: int) -> int:
 
 
 ## Flat (cells * 6) neighbour table, same shape as HexGrid._neighbors_flat.
+## Slow for whole-world files (millions of hexes): call neighbor() on demand there.
 func build_neighbors_flat() -> PackedInt32Array:
 	var out := PackedInt32Array()
 	out.resize(cells * 6)
@@ -216,3 +220,11 @@ func make_data_image() -> Image:
 		buf[o + 2] = river_mask[i]
 		buf[o + 3] = river_class[i]
 	return Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, buf)
+
+
+## One u8 layer as an R8 image (width x height, texel = hex). No per-hex loop,
+## so it is fast even for whole-world files. Empty Image if the layer is missing.
+func make_layer_image(lname: String) -> Image:
+	if not _u8.has(lname):
+		return Image.new()
+	return Image.create_from_data(width, height, false, Image.FORMAT_R8, _u8[lname])
