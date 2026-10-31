@@ -1,5 +1,7 @@
 # sd-hex-pipeline
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/zoranduric/sd-hex-pipeline/blob/main/notebooks/build_balkans.ipynb)
+
 Bakes real-world GIS data into a **pointy-top hex grid** for a Godot grand-strategy map
 (*Strategic Deterrence*). Elevation, land cover, coastlines, lakes, countries, provinces and
 rivers become flat per-hex arrays. Godot loads them in milliseconds with
@@ -17,9 +19,11 @@ Everything is built from data you can ship in a **commercial** game (see
 
 ## Quick start (Google Colab)
 
-Open [`notebooks/build_balkans.ipynb`](notebooks/build_balkans.ipynb) in Colab
-(*File → Open notebook → GitHub* → `zoranduric/sd-hex-pipeline`) and choose *Run all*.
-A CPU runtime is enough. Downloads are cached in Google Drive, so reruns are fast.
+1. Click [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/zoranduric/sd-hex-pipeline/blob/main/notebooks/build_balkans.ipynb)
+2. *Runtime → Run all* (CPU is fine). The preview is shown and a zip of the outputs downloads automatically.
+
+To keep downloads cached between sessions, set `USE_DRIVE = True` in the first cell. Colab will then ask to
+connect to your Google Drive, and outputs are saved to `MyDrive/sd-hex-pipeline/`.
 
 ## Quick start (local)
 
