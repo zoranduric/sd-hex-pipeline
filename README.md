@@ -61,6 +61,8 @@ Outputs go to `out/<region>_<hexkm>km/`:
 
 ## Godot integration
 
+**Step-by-step plan for the game repo (give this to your coding agent):** [docs/GODOT_HANDOFF.md](docs/GODOT_HANDOFF.md)
+
 ```gdscript
 var map := HexMapData.load_file("res://data/hexmap.sdhx")
 var nbrs := map.build_neighbors_flat()          # PackedInt32Array, 6 per hex, -1 = edge
