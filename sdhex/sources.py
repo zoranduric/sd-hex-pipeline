@@ -15,6 +15,7 @@ from typing import Protocol
 
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 import rasterio
 import requests
 from rasterio.enums import Resampling
@@ -35,7 +36,29 @@ NE_LAND = f"{NE_BASE}/physical/ne_10m_land.zip"
 NE_LAKES = f"{NE_BASE}/physical/ne_10m_lakes.zip"
 NE_ADMIN0 = f"{NE_BASE}/cultural/ne_10m_admin_0_countries.zip"
 NE_ADMIN1 = f"{NE_BASE}/cultural/ne_10m_admin_1_states_provinces.zip"
-HYDRORIVERS_EU = "https://data.hydrosheds.org/file/HydroRIVERS/HydroRIVERS_v10_eu_shp.zip"
+HYDRORIVERS_URL = "https://data.hydrosheds.org/file/HydroRIVERS/HydroRIVERS_v10_{region}_shp.zip"
+# Generous lon/lat boxes around each HydroSHEDS continental file. Their real
+# borders follow river basins, so neighbouring boxes overlap on purpose: a bbox
+# near a boundary loads both files (basins never appear in two files).
+HYDRORIVERS_REGIONS: dict[str, tuple[tuple[float, float, float, float], ...]] = {
+    "eu": ((-25.0, 12.0, 70.0, 82.0),),     # Europe + Middle East
+    # Africa: the coast east of Tunisia stays below 33.5N, so Crete/Cyprus don't pull it in.
+    "af": ((-26.0, -36.0, 12.0, 38.0), (12.0, -36.0, 56.0, 33.5)),
+    "as": ((55.0, -12.0, 180.0, 56.0),),    # South/East/SE Asia
+    "si": ((55.0, 45.0, 180.0, 82.0),),     # Siberia
+    "au": ((90.0, -56.0, 180.0, 25.0),),    # Australasia + Pacific
+    "na": ((-180.0, 5.0, -50.0, 72.0),),    # North + Central America
+    "sa": ((-93.0, -56.0, -32.0, 15.0),),   # South America
+    "ar": ((-180.0, 50.0, -10.0, 84.0),),   # North American Arctic
+}
+
+
+def hydrorivers_regions(bounds) -> list[str]:
+    lon_min, lat_min, lon_max, lat_max = bounds
+    return [
+        k for k, boxes in HYDRORIVERS_REGIONS.items()
+        if any(lon_min < c and lon_max > a and lat_min < d and lat_max > b for a, b, c, d in boxes)
+    ]
 
 ALLOWED_HOSTS = (
     "copernicus-dem-90m.s3.amazonaws.com",
@@ -183,9 +206,10 @@ def _col(gdf: gpd.GeoDataFrame, *names: str) -> str:
 class RemoteSources:
     """Streams COG rasters over HTTP range requests; caches vector downloads."""
 
-    def __init__(self, cache_dir: str | Path = "cache", workers: int = 8):
+    def __init__(self, cache_dir: str | Path = "cache", workers: int = 8, river_regions: list[str] | None = None):
         self.cache = Path(cache_dir)
         self.workers = workers
+        self.river_regions = river_regions
 
     def elevation(self, sg: SampleGrid) -> np.ndarray:
         tiles = copdem_tiles(sg.bounds)
@@ -224,7 +248,18 @@ class RemoteSources:
         )
 
     def rivers(self, bounds) -> gpd.GeoDataFrame:
-        g = _read_zipped_vector(download(HYDRORIVERS_EU, self.cache), bounds)
-        return gpd.GeoDataFrame(
-            {"discharge_cms": g[_col(g, "DIS_AV_CMS")].astype(float)}, geometry=g.geometry, crs=g.crs
-        )
+        regions = self.river_regions or hydrorivers_regions(bounds)
+        unknown = set(regions) - set(HYDRORIVERS_REGIONS)
+        if unknown:
+            raise ValueError(f"unknown HydroRIVERS regions {sorted(unknown)}, known: {sorted(HYDRORIVERS_REGIONS)}")
+        log.info("HydroRIVERS files: %s", ", ".join(regions) or "none")
+        parts = []
+        for region in regions:
+            g = _read_zipped_vector(download(HYDRORIVERS_URL.format(region=region), self.cache), bounds)
+            if len(g):
+                parts.append(gpd.GeoDataFrame(
+                    {"discharge_cms": g[_col(g, "DIS_AV_CMS")].astype(float)}, geometry=g.geometry, crs=g.crs
+                ))
+        if not parts:
+            return gpd.GeoDataFrame({"discharge_cms": []}, geometry=[], crs=4326)
+        return gpd.GeoDataFrame(pd.concat(parts, ignore_index=True), crs=parts[0].crs)

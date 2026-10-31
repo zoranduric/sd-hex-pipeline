@@ -113,3 +113,14 @@ def test_bad_bbox_rejected(grid):
         HexCrop.from_bbox(grid, 20, 45, 19, 46)
     with pytest.raises(ValueError):
         HexCrop.from_bbox(grid, 170, 0, 190, 10)
+
+
+def test_river_files_chosen_per_region():
+    from sdhex.config import REGIONS
+    from sdhex.sources import hydrorivers_regions
+
+    assert hydrorivers_regions(REGIONS["balkans"]) == ["eu"]
+    assert hydrorivers_regions(REGIONS["finland"]) == ["eu"]
+    assert hydrorivers_regions(REGIONS["baltics"]) == ["eu"]
+    assert {"as", "eu"} <= set(hydrorivers_regions(REGIONS["india"]))
+    assert set(hydrorivers_regions(REGIONS["middle_east"])) == {"eu", "af", "as"}

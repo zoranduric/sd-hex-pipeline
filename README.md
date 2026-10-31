@@ -52,6 +52,27 @@ Outputs go to `out/<region>_<hexkm>km/`:
 | `hex_terrain.png` | One texel per hex: RGB terrain colour, A flags |
 | `preview.png` | Hex render with borders and rivers, for eyeballing |
 
+## Regions
+
+`sdhex regions` lists presets. Any area works with `--bbox lon_min,lat_min,lon_max,lat_max`.
+
+| Preset | Hexes @ 11 km | @ 9.2 km | River files |
+|---|---|---|---|
+| `balkans` | 28k | 40k | eu |
+| `finland` | 16k | 24k | eu |
+| `baltics` | 6k | 9k | eu |
+| `india` | 142k | 203k | eu, as, au |
+| `middle_east` | 140k | 199k | eu, af, as |
+
+- HydroRIVERS continent files are chosen automatically from the bbox. Override with `--river-regions eu,as`.
+  Each file is a large one-off download (cached).
+- **High latitudes:** hexes are regular in lon/lat, so in real distance they get narrower east–west by
+  `cos(lat)`. At Finland's 65°N, an 11 km hex is about 4.6 km wide, so the map looks stretched compared with
+  reality and you get ~2.4× more hexes per km² than in the tropics. This is the flat-map trade-off.
+  For a Nordic-only game you could use a larger `--hex-km`.
+- **Data gap:** Copernicus GLO-90 has no tiles for Armenia and Azerbaijan. Hexes there get no elevation
+  (classified as flat), and the build logs a warning.
+
 ## Grid conventions (must match the game)
 
 - Pointy-top hexes with **odd-r offset storage**: odd rows are shifted half a hex east.
@@ -107,7 +128,8 @@ derive modifiers or reclassify without re-running the pipeline.
   access to the data hosts, and is tested against a local HTTP range server plus a synthetic world.
   Expect to tweak things on the first Colab run, then please open an issue with the log (`-v`).
 - Areas crossing the antimeridian (±180°) are rejected for now.
-- HydroRIVERS is fetched for Europe only (`eu`); other continents need their own zip (see `sources.py`).
+- HydroRIVERS continent boxes in `sources.py` are approximate (generous). A bbox near a boundary may
+  download one extra file.
 
 ## Roadmap
 

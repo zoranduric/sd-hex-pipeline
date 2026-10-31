@@ -10,6 +10,13 @@ REGIONS: dict[str, tuple[float, float, float, float]] = {
     "balkans": (13.0, 34.5, 30.0, 48.5),
     # Small fast smoke-test region around Belgrade (confluence of Sava and Danube).
     "belgrade": (19.5, 44.0, 21.5, 45.5),
+    "finland": (19.0, 59.5, 32.0, 70.2),
+    # Estonia, Latvia, Lithuania (+ Kaliningrad edge).
+    "baltics": (20.5, 53.5, 28.5, 60.0),
+    # Indian subcontinent incl. Pakistan, Nepal, Bangladesh, Sri Lanka.
+    "india": (60.5, 5.5, 98.0, 37.5),
+    # Egypt/Turkey -> Iran, Caucasus -> Yemen.
+    "middle_east": (25.0, 12.0, 63.5, 42.5),
 }
 
 # Game terrain enum. Values match TerrainData in the Godot project.

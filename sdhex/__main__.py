@@ -38,6 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--out", type=Path, default=Path("out"))
     b.add_argument("--cache", type=Path, default=Path("cache"))
     b.add_argument("--workers", type=int, default=8)
+    b.add_argument("--river-regions", help="HydroRIVERS files to use, e.g. eu,as (default: chosen from the bbox)")
     b.add_argument("--no-landcover", action="store_true")
     b.add_argument("--no-rivers", action="store_true")
     b.add_argument("--no-admin1", action="store_true")
@@ -73,7 +74,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.synthetic:
         sources = SyntheticSources(cfg.resolved_bbox())
     else:
-        sources = RemoteSources(args.cache, args.workers)
+        sources = RemoteSources(
+            args.cache, args.workers,
+            river_regions=args.river_regions.split(",") if args.river_regions else None,
+        )
     res = build(cfg, sources)
     paths = export(res, cfg, out_dir)
     meta = json.loads(paths["meta"].read_text())

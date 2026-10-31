@@ -210,6 +210,10 @@ def build(cfg: BuildConfig, sources: Sources) -> BuildResult:
     log.info("elevation")
     elev = sources.elevation(sg)
     e_mean, e_std, e_min, e_max = agg.masked_stats(elev, np.isfinite(elev) & dry)
+    no_elev = int((((land_frac - lake_frac) > 0.25) & ~np.isfinite(e_mean)).sum())
+    if no_elev:
+        # e.g. Copernicus GLO-90 omits Armenia and Azerbaijan; these hexes classify as flat.
+        log.warning("%d land hexes have no elevation data (treated as 0 m, flat)", no_elev)
 
     layers_lc: dict[str, np.ndarray] = {}
     zeros = np.zeros(crop.cells)

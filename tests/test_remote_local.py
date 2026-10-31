@@ -83,6 +83,12 @@ def server(tmp_path_factory):
                          crs=4326),
         hydro / "HydroRIVERS_v10_eu_shp.zip", "HydroRIVERS_v10_eu", subdir="HydroRIVERS_v10_eu_shp/",
     )
+    # Second continental file, as when a bbox straddles two HydroSHEDS regions.
+    _zip_shp(
+        gpd.GeoDataFrame({"HYRIV_ID": [3], "DIS_AV_CMS": [800.0]},
+                         geometry=[LineString([(20.2, 44.2), (20.2, 45.4)])], crs=4326),
+        hydro / "HydroRIVERS_v10_as_shp.zip", "HydroRIVERS_v10_as", subdir="HydroRIVERS_v10_as_shp/",
+    )
 
     proc = subprocess.Popen(
         [sys.executable, str(Path(__file__).with_name("range_server.py")), str(root)],
@@ -105,7 +111,7 @@ def patched(server, monkeypatch, tmp_path):
     monkeypatch.setattr(sources, "NE_LAKES", base + "/ne/ne_10m_lakes.zip")
     monkeypatch.setattr(sources, "NE_ADMIN0", base + "/ne/ne_10m_admin_0_countries.zip")
     monkeypatch.setattr(sources, "NE_ADMIN1", base + "/ne/ne_10m_admin_1_states_provinces.zip")
-    monkeypatch.setattr(sources, "HYDRORIVERS_EU", base + "/hydro/HydroRIVERS_v10_eu_shp.zip")
+    monkeypatch.setattr(sources, "HYDRORIVERS_URL", base + "/hydro/HydroRIVERS_v10_{region}_shp.zip")
     return sources.RemoteSources(tmp_path / "cache", workers=4)
 
 
@@ -132,6 +138,17 @@ def test_remote_build(patched):
     assert (res.layers["river_class"].data == 3).sum() >= 8
     assert res.layers["river_class"].data.max() == 3
     assert not (res.layers["river_class"].data == 1).any()
+
+
+def test_rivers_merge_multiple_continent_files(patched):
+    eu_only = patched.rivers((19.5, 44.0, 21.5, 45.5))
+    assert sorted(eu_only["discharge_cms"]) == [10.0, 5500.0]
+    patched.river_regions = ["eu", "as"]
+    both = patched.rivers((19.5, 44.0, 21.5, 45.5))
+    assert sorted(both["discharge_cms"]) == [10.0, 800.0, 5500.0]
+    patched.river_regions = ["xx"]
+    with pytest.raises(ValueError, match="unknown HydroRIVERS"):
+        patched.rivers((19.5, 44.0, 21.5, 45.5))
 
 
 def test_refuses_unknown_host(tmp_path):
