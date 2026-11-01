@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from sdhex.config import FLAG_COASTAL, FLAG_LAND, FLAG_NAVIGABLE, TERRAIN_ENUM, BuildConfig
+from sdhex.config import BIOME_ENUM, FLAG_COASTAL, FLAG_LAND, FLAG_NAVIGABLE, TERRAIN_ENUM, BuildConfig
 from sdhex.export import export, read_sdhx
 from sdhex.pipeline import build, neighbor_table
 from sdhex.synthetic import SyntheticSources
@@ -87,3 +87,14 @@ def test_river_masks_symmetric_and_navigable(built):
                 seen.add(n)
                 stack.append(n)
     assert len(seen) >= 0.9 * len(navigable)
+
+
+def test_biome_download_failure_is_not_fatal(caplog):
+    class NoBiomes(SyntheticSources):
+        def biomes(self, bounds):
+            raise OSError("403 Forbidden")
+
+    res = build(BuildConfig(bbox=BBOX, hex_km=11.0), NoBiomes(BBOX))
+    biome = res.layers["biome"].data
+    assert set(np.unique(biome)) <= {0, BIOME_ENUM["ICE"]}  # ICE (from snow) is not spread by gap filling
+    assert "biome data unavailable" in caplog.text

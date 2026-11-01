@@ -269,7 +269,13 @@ def _build_part(cfg: BuildConfig, crop: HexCrop, sources: Sources):
     biome = np.zeros(n, dtype=np.uint8)
     if cfg.with_biomes:
         log.info("biomes")
-        eco = sources.biomes(bounds)
+        try:
+            eco = sources.biomes(bounds)
+        except Exception as e:  # optional layer: a failed download must not kill the build
+            log.warning("biome data unavailable (%s: %s); continuing with biome = 0. "
+                        "Fix the download or use --no-biomes; for world builds delete <cache>/bands "
+                        "before re-running to get biomes.", type(e).__name__, e)
+            eco = gpd.GeoDataFrame({"biome_num": []}, geometry=[], crs=4326)
         lut = np.zeros(256, dtype=np.uint8)
         for wwf, game in WWF_BIOME_TO_GAME.items():
             lut[wwf] = game
@@ -353,7 +359,9 @@ def _merge_tables(parts_tables: list[list[dict]], id_arrays: list[np.ndarray], k
 
 
 def _fill_biome_gaps(biome: np.ndarray, land: np.ndarray, nbr: np.ndarray, passes: int = 8) -> None:
-    """Coastal land hexes outside every ecoregion polygon take a neighbour's biome."""
+    """Coastal land hexes outside every ecoregion polygon take a neighbour's biome.
+
+    ICE comes from snow cover, not ecoregions, so it is never spread to neighbours."""
     for _ in range(passes):
         holes = np.flatnonzero(land & (biome == 0))
         if holes.size == 0:
@@ -361,7 +369,8 @@ def _fill_biome_gaps(biome: np.ndarray, land: np.ndarray, nbr: np.ndarray, passe
         for d in range(6):
             nb = nbr[holes, d]
             take = (nb >= 0) & (biome[holes] == 0)
-            vals = np.where(take, biome[np.clip(nb, 0, None)], 0)
+            donor = biome[np.clip(nb, 0, None)]
+            vals = np.where(take & (donor != BIOME_ENUM["ICE"]), donor, 0)
             biome[holes] = np.where(biome[holes] == 0, vals, biome[holes])
 
 

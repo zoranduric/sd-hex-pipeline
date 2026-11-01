@@ -55,7 +55,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{name:10s} {bbox}")
         return 0
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(asctime)s %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    if args.verbose:
+        logging.getLogger("sdhex").setLevel(logging.DEBUG)  # not rasterio/fiona: their debug output buries errors
     if not 2.0 <= args.hex_km <= 200.0:
         ap.error("--hex-km must be between 2 and 200")
     if not 2 <= args.samples_per_hex <= 40:
